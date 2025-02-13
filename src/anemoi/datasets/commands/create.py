@@ -7,6 +7,7 @@
 # granted to it by virtue of its status as an intergovernmental organisation
 # nor does it submit to any jurisdiction.
 
+from mpi4py import MPI
 import datetime
 import logging
 import time
@@ -61,12 +62,15 @@ class Create(Command):
         group = command_parser.add_mutually_exclusive_group()
         group.add_argument("--threads", help="Use `n` parallel thread workers.", type=int, default=0)
         group.add_argument("--processes", help="Use `n` parallel process workers.", type=int, default=0)
+        group.add_argument("--mpi", help="Use MPI", action="store_true")
         command_parser.add_argument("--trace", action="store_true")
 
     def run(self, args):
 
         now = time.time()
-        if args.threads + args.processes:
+        if args.mpi:
+            self.mpi_create(args)
+        elif args.threads + args.processes:
             self.parallel_create(args)
         else:
             self.serial_create(args)
@@ -158,5 +162,49 @@ class Create(Command):
             executor.submit(task, "cleanup", options).result()
             executor.submit(task, "verify", options).result()
 
+
+    def mpi_create(self, args):
+
+        options = vars(args)
+        options.pop("command")
+        options.pop("threads")
+        options.pop("processes")
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        is_root = rank == 0
+        load_options = options.copy()
+        load_options["parts"] = f"{rank+1}/{size}"
+
+        infomsg = " --- MPI Create ---\n" +\
+            f"rank: {rank}\n" +\
+            f"size: {size}\n" +\
+            f"is_root: {is_root}\n" +\
+            f"load_options:\n"
+        for key, val in load_options.items():
+            infomsg += f"\t{key}: {val}\n"
+        LOG.info(infomsg)
+
+        if is_root:
+            task("init", options)
+        comm.barrier()
+
+        task("load", load_options)
+
+        if is_root:
+            task("finalise", options)
+            task("init_additions", options)
+        comm.barrier()
+
+        task("load-additions", load_options)
+
+        if is_root:
+            task("finalise-additions", options)
+
+            task("patch", options)
+
+            task("cleanup", options)
+            task("verify", options)
 
 command = Create
