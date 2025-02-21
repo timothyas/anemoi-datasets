@@ -9,6 +9,8 @@
 
 import logging
 
+import numpy as np
+
 from earthkit.data.core.fieldlist import MultiFieldList
 
 from anemoi.datasets.data.stores import name_to_zarr_store
@@ -53,6 +55,16 @@ def load_one(emoji, context, dates, dataset, *, options={}, flavour=None, patch=
             data = xr.open_dataset(**store)
     else:
         data = xr.open_dataset(dataset, **options)
+
+    # HACK: remove poles
+    if "latitude" in data.coords:
+        lat0 = data["latitude"].values[0]
+        if any(np.isclose(lat, 90) for lat in data.latitude.values[[0,-1]]):
+            d_lat = data["latitude"].values[1] - data["latitude"].values[0]
+            start = data["latitude"].values[0] + d_lat/2
+            end = -start
+            data = data.sel(latitude=slice(start, end))
+            LOG.warning(f"POLE HACK: new latitude bounds are {data.latitude.values[0]} and {data.latitude.values[-1]}")
 
     fs = XarrayFieldList.from_xarray(data, flavour=flavour, patch=patch)
 
