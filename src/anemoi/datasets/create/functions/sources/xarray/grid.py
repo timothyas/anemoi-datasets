@@ -35,6 +35,7 @@ class LatLonGrid(Grid):
         super().__init__()
         self.lat = lat
         self.lon = lon
+        self.variable_dims = variable_dims
 
 
 class XYGrid(Grid):
@@ -48,10 +49,19 @@ class MeshedGrid(LatLonGrid):
     @cached_property
     def grid_points(self):
 
-        lat, lon = np.meshgrid(
-            self.lat.variable.values,
-            self.lon.variable.values,
-        )
+        if self.variable_dims == ("longitude", "latitude"):
+            lat, lon = np.meshgrid(
+                self.lat.variable.values,
+                self.lon.variable.values,
+            )
+        elif self.variable_dims == ("latitude", "longitude"):
+            lon, lat = np.meshgrid(
+                self.lon.variable.values,
+                self.lat.variable.values,
+            )
+
+        else:
+            raise NotImplementedError(f"MeshedGrid.grid_points: unrecognized variable_dims {self.variable_dims}")
 
         return lat.flatten(), lon.flatten()
 
